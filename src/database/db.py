@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 import configparser
 
 config = configparser.ConfigParser()
@@ -9,21 +9,24 @@ user = config.get('DB', 'USER')
 passWOrd = config.get('DB', 'PASSWORD')
 host = config.get('DB', 'HOST')
 port = config.get('DB', 'PORT')
-name=config.get('DB', 'NAME')
-
+name = config.get('DB', 'NAME')
 
 class Base(DeclarativeBase):
     pass
 
-engine = create_engine(f'postgresql://{user}:{passWOrd}@{host}:{port}/{name}')
+class DatabaseSessionManager:
+    def __init__(self, url: str):
+        self._engine = create_async_engine(url, echo=True)
+        self._session_maker = sessionmaker(self._engine, expire_on_commit=False, class_=AsyncSession)
 
-Session = sessionmaker(bind=engine)
+    async def session(self):
+        async with self._session_maker() as session:
+            yield session
 
-def get_db():
-    db=Session()
-    try:
-        yield db
-    finally:
-        db.close()
+url = f"postgresql+asyncpg://{user}:{passWOrd}@{host}:{port}/{name}"
+sessionmanager = DatabaseSessionManager(url)
+engine = create_async_engine(url)
 
-
+async def get_db() -> AsyncSession:
+    async for session in sessionmanager.session():
+        yield session
